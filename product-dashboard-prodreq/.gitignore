@@ -1,0 +1,19 @@
+# env
+.env
+
+# node
+node_modules
+npm-debug.log*
+
+# logs
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# generated files
+prod.txt
+dev.txt
