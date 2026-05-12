@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Product Dashboard - Statystyki</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Product Dashboard</h1>
+    <nav>
+      <a href="/index.html">Start</a>
+      <a href="/products.html">Produkty</a>
+      <a href="/stats.html" class="active">Statystyki</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>Statystyki API</h2>
+      <button id="load-stats-btn">Pobierz statystyki</button>
+      <div class="stats-box">
+        <p><strong>Liczba produktów:</strong> <span id="total-products">-</span></p>
+        <p><strong>Instancja backendu:</strong> <span id="instance-id">-</span></p>
+        <p><strong>Status cache:</strong> <span id="cache-status">-</span></p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/js/stats.js"></script>
+</body>
+</html>
