@@ -68,7 +68,9 @@ jobs:
         run: npm ci
 
       - name: Run unit tests
-        run: npm test | tee test-report-node-${{ matrix.node-version }}.txt
+        run: |
+          set -o pipefail
+          npm test | tee test-report-node-${{ matrix.node-version }}.txt
 
       - name: Upload test artifact for Node 20
         if: ${{ always() && matrix.node-version == 20 }}
