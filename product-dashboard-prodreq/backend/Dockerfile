@@ -1,20 +1,21 @@
-FROM node:20-alpine
+FROM node:20-alpine AS deps
 
-ARG IMAGE_VERSION=v3
-LABEL version=$IMAGE_VERSION
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+FROM node:20-alpine AS runner
 
 ENV NODE_ENV=production \
     PORT=3000
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev \
-    && npm cache clean --force \
-    && chown -R node:node /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
 
-COPY --chown=node:node . .
-
+RUN chown -R node:node /app
 USER node
 
 EXPOSE 3000
