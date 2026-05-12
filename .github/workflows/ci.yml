@@ -12,33 +12,32 @@ on:
       - '**.md'
       - 'docs/**'
 
+permissions:
+  contents: read
+  packages: write
+
 env:
-  NODE_VERSION: 20
+  NODE_VERSION: '20'
+  APP_PATH: product-dashboard-prodreq/backend
 
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: product-dashboard-prodreq/backend
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+      - name: Setup backend
+        uses: ./.github/actions/setup-app
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: product-dashboard-prodreq/backend/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
+          app-path: ${{ env.APP_PATH }}
 
       - name: Run lint
+        working-directory: ${{ env.APP_PATH }}
         run: npm run lint
 
   test:
@@ -49,25 +48,19 @@ jobs:
     strategy:
       matrix:
         node-version: [18, 20, 22]
-    defaults:
-      run:
-        working-directory: product-dashboard-prodreq/backend
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+      - name: Setup backend
+        uses: ./.github/actions/setup-app
         with:
           node-version: ${{ matrix.node-version }}
-          cache: npm
-          cache-dependency-path: product-dashboard-prodreq/backend/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
+          app-path: ${{ env.APP_PATH }}
 
       - name: Run unit tests
+        working-directory: ${{ env.APP_PATH }}
         run: |
           set -o pipefail
           npm test | tee test-report-node-${{ matrix.node-version }}.txt
@@ -80,46 +73,147 @@ jobs:
           path: product-dashboard-prodreq/backend/test-report-node-20.txt
           retention-days: 7
 
-      - name: Add test summary
+      - name: Add unit test summary
         if: always()
         run: |
-          echo "## Test results" >> $GITHUB_STEP_SUMMARY
+          echo "## Unit tests summary" >> $GITHUB_STEP_SUMMARY
           echo "- Node version: ${{ matrix.node-version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Job: Tests (Node ${{ matrix.node-version }})" >> $GITHUB_STEP_SUMMARY
-          echo "- Report file: test-report-node-${{ matrix.node-version }}.txt" >> $GITHUB_STEP_SUMMARY
+          echo "- Report: test-report-node-${{ matrix.node-version }}.txt" >> $GITHUB_STEP_SUMMARY
 
-  build:
-    name: Build
+  test-integration:
+    name: Integration tests
     needs: test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: product-dashboard-prodreq/backend
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U testuser -d testdb"
+          --health-interval 10s
+          --health-retries 5
+          --health-timeout 5s
+
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: testuser
+      PGPASSWORD: testpass
+      PGDATABASE: testdb
+      DATABASE_URL: postgres://testuser:testpass@127.0.0.1:5432/testdb
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+      - name: Setup backend
+        uses: ./.github/actions/setup-app
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: product-dashboard-prodreq/backend/package-lock.json
+          app-path: ${{ env.APP_PATH }}
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Run integration tests
+        working-directory: ${{ env.APP_PATH }}
+        run: npm run test:integration
 
-      - name: Run build
+      - name: Write integration failure summary
+        if: failure()
+        run: |
+          echo "## Integration tests failed" >> $GITHUB_STEP_SUMMARY
+          echo "- PostgreSQL service container did not pass tests." >> $GITHUB_STEP_SUMMARY
+
+  build-and-push:
+    name: Build and push image
+    needs: test-integration
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/product-api
+      PLATFORMS: linux/amd64,linux/arm64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup backend
+        uses: ./.github/actions/setup-app
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          app-path: ${{ env.APP_PATH }}
+
+      - name: Run app build
+        working-directory: ${{ env.APP_PATH }}
         run: npm run build
 
-      - name: Add build summary
+      - name: Save build start time
+        id: timer_start
+        run: echo "ts=$(date +%s)" >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+
+      - name: Build and push Docker image
+        id: buildpush
+        uses: docker/build-push-action@v5
+        with:
+          context: ./product-dashboard-prodreq/backend
+          file: ./product-dashboard-prodreq/backend/Dockerfile
+          push: true
+          platforms: ${{ env.PLATFORMS }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Inspect manifest list
+        run: docker buildx imagetools inspect ${{ env.IMAGE_NAME }}:latest | tee imagetools.txt
+
+      - name: Save build duration
+        id: timer_end
+        run: echo "duration=$(( $(date +%s) - ${{ steps.timer_start.outputs.ts }} ))" >> $GITHUB_OUTPUT
+
+      - name: Write failure summary
+        if: failure()
+        run: |
+          echo "## Build and push failed" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: ${{ env.IMAGE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Expected platforms: ${{ env.PLATFORMS }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Write build summary
         if: always()
         run: |
-          echo "## Build summary" >> $GITHUB_STEP_SUMMARY
-          echo "- Node version: ${{ env.NODE_VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Dist contents:" >> $GITHUB_STEP_SUMMARY
+          echo "## Docker build summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: ${{ env.IMAGE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Platforms: ${{ env.PLATFORMS }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Build duration (s): ${{ steps.timer_end.outputs.duration }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Tags:" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          ls -la dist >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
