@@ -1,0 +1,123 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+env:
+  NODE_VERSION: 20
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run lint
+        run: npm run lint
+
+  test:
+    name: Tests (Node ${{ matrix.node-version }})
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test | tee test-report-node-${{ matrix.node-version }}.txt
+
+      - name: Upload test artifact for Node 20
+        if: ${{ always() && matrix.node-version == 20 }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-node-20
+          path: backend/test-report-node-20.txt
+          retention-days: 7
+
+      - name: Add test summary
+        if: always()
+        run: |
+          echo "## Test results" >> $GITHUB_STEP_SUMMARY
+          echo "- Node version: ${{ matrix.node-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Job: Tests (Node ${{ matrix.node-version }})" >> $GITHUB_STEP_SUMMARY
+          echo "- Report file: test-report-node-${{ matrix.node-version }}.txt" >> $GITHUB_STEP_SUMMARY
+
+  build:
+    name: Build
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run build
+        run: npm run build
+
+      - name: Add build summary
+        if: always()
+        run: |
+          echo "## Build summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Node version: ${{ env.NODE_VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Dist contents:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          ls -la dist >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

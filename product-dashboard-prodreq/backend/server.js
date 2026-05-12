@@ -95,6 +95,8 @@ app.get('/stats', async (req, res) => {
       'SELECT COUNT(*)::int AS total FROM products'
     );
 
+    //aaaaaaa
+
     return res.json({
       totalProducts: result.rows[0].total,
       cache_hits: cacheHits,
