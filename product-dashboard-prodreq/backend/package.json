@@ -5,8 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "lint": "node --check server.js && node --check utils/subtract.js && node --check tests/subtract.test.js && node --check scripts/build.js",
-    "test": "node --test tests/*.test.js",
+    "lint": "node --check server.js && node --check utils/subtract.js && node --check tests/subtract.test.js && node --check tests/items.integration.test.js && node --check scripts/build.js",
+    "test": "node --test tests/subtract.test.js",
+    "test:integration": "node --test tests/items.integration.test.js",
     "build": "node scripts/build.js"
   },
   "dependencies": {

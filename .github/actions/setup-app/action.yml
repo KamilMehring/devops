@@ -1,0 +1,25 @@
+name: Setup app
+description: Setup Node.js and install backend dependencies
+
+inputs:
+  node-version:
+    required: true
+    description: Node.js version
+  app-path:
+    required: true
+    description: Path to backend app
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: npm
+        cache-dependency-path: ${{ inputs.app-path }}/package-lock.json
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.app-path }}
+      run: npm ci
