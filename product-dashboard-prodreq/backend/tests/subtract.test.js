@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { subtract } = require('../utils/subtract');
 
 test('subtract: odejmuje dwie dodatnie liczby', () => {
-  assert.equal(subtract(10, 4), 7);
+  assert.equal(subtract(10, 4), 6);
 });
 
 test('subtract: może zwrócić wynik ujemny', () => {
